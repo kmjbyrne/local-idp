@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+
+# Verify the service actually boots and serves /health.
+#
+# Usage:
+#   bin/verify              # via docker compose when available, else locally
+#   bin/verify --local      # always run uvicorn directly
+#   bin/verify --docker     # require docker compose, fail if absent
+#
+# Used by CI and safe to run by hand. Exits non-zero if the service never
+# becomes healthy.
+
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+MODE="auto"
+for arg in "$@"; do
+    case "$arg" in
+        --local) MODE="local" ;;
+        --docker) MODE="docker" ;;
+        *) echo "Unknown option: $arg" >&2; exit 1 ;;
+    esac
+done
+
+PORT="${PORT:-8000}"
+HEALTH_URL="http://localhost:${PORT}/health"
+
+have_docker() {
+    [[ -f docker-compose.yml ]] && command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1
+}
+
+if [[ "$MODE" == "auto" ]]; then
+    if have_docker; then MODE="docker"; else MODE="local"; fi
+fi
+
+if [[ "$MODE" == "docker" ]] && ! have_docker; then
+    echo "Docker compose unavailable or the Docker layer has been ejected." >&2
+    exit 1
+fi
+
+poll_health() {
+    for _ in $(seq 1 30); do
+        if curl --fail --silent "$HEALTH_URL" >/dev/null 2>&1; then
+            echo "Service healthy at $HEALTH_URL"
+            curl --silent "$HEALTH_URL"; echo
+            return 0
+        fi
+        sleep 2
+    done
+    echo "Service did not become healthy within 60s" >&2
+    return 1
+}
+
+if [[ "$MODE" == "docker" ]]; then
+    echo "Verifying via docker compose"
+    # Base file only: the override mounts local source and is for development.
+    compose() { docker compose -f docker-compose.yml "$@"; }
+
+    cleanup() {
+        echo "--- container logs ---"
+        compose logs --no-color api || true
+        compose down --volumes --remove-orphans || true
+    }
+    trap cleanup EXIT
+
+    compose build
+    compose up -d --wait --wait-timeout 120 api
+    echo "Compose reports the container healthy."
+    poll_health
+else
+    echo "Verifying locally with uvicorn"
+    uv run uvicorn main:app --host 127.0.0.1 --port "$PORT" &
+    APP_PID=$!
+
+    cleanup() {
+        kill "$APP_PID" 2>/dev/null || true
+        wait "$APP_PID" 2>/dev/null || true
+    }
+    trap cleanup EXIT
+
+    poll_health
+fi
+
+echo "Verification passed."

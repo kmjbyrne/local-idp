@@ -1,0 +1,141 @@
+:root { color-scheme: dark; }
+
+body {
+  font: 16px system-ui, sans-serif;
+  margin: 0;
+  padding: 2rem 1rem;
+  background: #14161a;
+  color: #e6e8eb;
+}
+
+main { max-width: 52rem; margin: 0 auto; }
+
+h1 { font-size: 1.375rem; margin: 0 0 .25rem; }
+h2 { font-size: 1rem; margin: 2.5rem 0 .75rem; color: #c6cbd1; }
+
+p.lede { margin: 0 0 2rem; color: #9aa3ad; font-size: .875rem; }
+
+table { width: 100%; border-collapse: collapse; margin-bottom: 1rem; }
+
+th, td {
+  text-align: left;
+  padding: .625rem .75rem .625rem 0;
+  border-bottom: 1px solid #22262c;
+  font-size: .875rem;
+  vertical-align: middle;
+}
+
+tbody tr:last-child td { border-bottom: 0; }
+tbody tr:hover td { background: #171a1f; }
+
+th {
+  color: #9aa3ad;
+  font-weight: 500;
+  font-size: .75rem;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+code { font-family: ui-monospace, monospace; font-size: .8125rem; color: #9aa3ad; }
+
+/* Edit and delete are the same kind of action, so they are the same kind of
+   control. A text link beside a bordered button reads as two different things
+   and sits on a different baseline. */
+.actions { display: flex; gap: .375rem; white-space: nowrap; }
+.actions form { margin: 0; }
+
+input, textarea, button { font: inherit; }
+
+input[type=text], textarea {
+  width: 100%;
+  box-sizing: border-box;
+  background: #1a1d22;
+  color: #e6e8eb;
+  border: 1px solid #2a2f36;
+  border-radius: .25rem;
+  padding: .375rem .5rem;
+}
+
+textarea { min-height: 3.5rem; resize: vertical; }
+
+label { display: block; margin-bottom: .75rem; font-size: .8125rem; color: #9aa3ad; }
+label span { display: block; margin-bottom: .25rem; }
+
+button, .btn {
+  display: inline-block;
+  background: #2a2f36;
+  color: #e6e8eb;
+  border: 1px solid #3a4049;
+  border-radius: .25rem;
+  padding: .3125rem .75rem;
+  font-size: .8125rem;
+  line-height: 1.2;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+button:hover, .btn:hover { border-color: #4a90d9; background: #323841; }
+
+/* Submit buttons carry the weight of the form they end. */
+button[type=submit] { font-size: .875rem; padding: .4375rem 1rem; }
+
+.danger { color: #c8a0a0; }
+.danger:hover { border-color: #d94a4a; background: #2a1d1d; color: #e88; }
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 0 1rem;
+}
+
+fieldset {
+  border: 1px solid #2a2f36;
+  border-radius: .5rem;
+  padding: 1rem 1rem .25rem;
+  margin: 0 0 1rem;
+}
+
+legend { padding: 0 .375rem; color: #9aa3ad; font-size: .8125rem; }
+
+.warn {
+  background: #2a1d1d;
+  border: 1px solid #5a3030;
+  border-radius: .375rem;
+  padding: .625rem .875rem;
+  font-size: .8125rem;
+  color: #e0b0b0;
+  margin-bottom: 1.5rem;
+}
+
+a { color: #4a90d9; }
+
+.btn { color: #e6e8eb; }
+
+.empty { color: #6b7480; font-style: italic; padding: 1rem 0; }
+
+/* Whether a secret is checked is the column somebody scans for, so it reads as
+   a state rather than as running text. */
+.tag {
+  display: inline-block;
+  font-size: .6875rem;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  border-radius: .1875rem;
+  padding: .125rem .375rem;
+}
+
+.tag.on { background: #1d2a1f; color: #9ccaa0; border: 1px solid #2f5a35; }
+.tag.off { background: #2a251d; color: #cab99c; border: 1px solid #5a4a2f; }
+
+/* A subject is a 36-character uuid on its own line. Left to itself the column
+   takes whatever width that needs and squeezes every other column; sized here
+   so the table stays readable at the width it actually gets. */
+.subject { font-size: .75rem; color: #7d858f; display: block; margin-top: .125rem; }
+
+table { table-layout: auto; }
+th:last-child, td.actions { width: 1%; }
+
+/* A narrow window turns the table into a horizontal scroll rather than
+   crushing the columns into single characters. */
+.scroll { overflow-x: auto; }

@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Sign in{% endblock %}
+{% block content %}
+<h1>Sign in</h1>
+<p class="lede">Mock identity provider. Pick somebody to be.</p>
+<ul>
+  {% for user in users %}
+  <li>
+    <a href="?{{ user.query }}">
+      <strong>{{ user.name or user.key }}</strong>
+      <span>{{ user.purpose or user.email or user.subject }}</span>
+      {% for role in user.roles %}<em>{{ role }}</em>{% endfor %}
+    </a>
+  </li>
+  {% endfor %}
+</ul>
+<footer>Nobody here who fits? <a href="/">Add a user</a>.</footer>
+{% endblock %}

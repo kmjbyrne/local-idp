@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% import "_fields.html" as fields %}
+{% block title %}Edit {{ user.key }}{% endblock %}
+{% block content %}
+<h1>Edit {{ user.name or user.key }}</h1>
+<p class="lede"><a href="/">Back to the list</a></p>
+<form method="post" action="/users/{{ user.key }}">
+  <div class="grid">
+    {{ fields.text("Key", "key", user.key) }}
+    {{ fields.text("Subject", "subject", user.subject) }}
+    {{ fields.text("Name", "name", user.name) }}
+    {{ fields.text("Email", "email", user.email) }}
+  </div>
+  {{ fields.area("Roles", "roles", user.roles | join(", ")) }}
+  {{ fields.area("Permissions", "permissions", user.permissions | join(", ")) }}
+  {{ fields.text("Purpose", "purpose", user.purpose) }}
+  <button type="submit">Save</button>
+</form>
+{% endblock %}

@@ -1,0 +1,21 @@
+# Applied automatically by `docker compose up`. Mounts the source for reload and
+# keeps the container in the foreground. CI uses `-f docker-compose.yml` alone
+# to skip it.
+services:
+  mock-idp:
+    command:
+      - uvicorn
+      - "main:app"
+      - --host
+      - 0.0.0.0
+      - --port
+      - "9000"
+      - --reload
+    volumes:
+      - .:/usr/src/app
+      # A bind mount for development, deliberately overriding the named volume
+      # the base file puts here. The user list is then a file in ./instance that
+      # can be read, edited and deleted without a docker command, and it belongs
+      # to the checkout rather than to the daemon.
+      - ./instance:/usr/src/app/instance
+    restart: "no"

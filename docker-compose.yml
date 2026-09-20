@@ -1,0 +1,36 @@
+# The compose project name. Set it, do not let it default.
+#
+# Docker derives the project name from the directory when it is unset, and names
+# every volume `<project>_<volume>`. Two checkouts that both declare a volume
+# called `instance` therefore share one, and a service can boot onto another
+# project's user list.
+name: ${COMPOSE_PROJECT_NAME:-mock-idp}
+
+services:
+  mock-idp:
+    build: .
+    # Named for the service, not the project. Interpolating the project name
+    # means a stack that includes this file builds under its own name and
+    # collides with whatever image that already is.
+    image: mock-idp:local
+    ports:
+      - "${PORT:-9000}:9000"
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      ISSUER: ${ISSUER:-http://localhost:9000}
+      AUDIENCE: ${AUDIENCE:-dev}
+    volumes:
+      # A named volume, so the user list outlives the container. The development
+      # override replaces this with a bind mount onto ./instance, where the JSON
+      # can be read and edited without a docker command.
+      - instance:/usr/src/app/instance
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:9000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  instance:

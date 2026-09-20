@@ -1,0 +1,146 @@
+[project]
+name = "mock-idp"
+version = "26.9.0"
+description = "Editable mock identity provider for local development"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.121.1",
+    "jinja2>=3.1.4",
+    "oidcutils[fastapi]>=0.0.3b0",
+    "python-multipart>=0.0.20",
+    "pydantic-settings>=2.12.0",
+    "uvicorn>=0.38.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[tool.uv.sources]
+# Pinned to a tag rather than tracking the default branch. Without it a lock
+# refresh takes whatever happens to be on main, which for an auth library is a
+# silent change to how tokens are signed.
+oidcutils = { git = "https://github.com/kmjbyrne/python-oidcutils.git", tag = "v0.0.3-beta" }
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "W",
+    "F",
+    "I",
+    "B",
+    "C4",
+    "UP",
+    "D",
+    "N",
+    "S",
+    "A",
+    "COM",
+    "T20",
+    "RET",
+    "SIM",
+    "ARG",
+    "PTH",
+    "PL",
+]
+
+ignore = [
+    "E501",
+    "COM812",
+    "D107",
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "pep257"
+
+[tool.ruff.lint.per-file-ignores]
+# A form handler takes one argument per field, and FastAPI reads the signature
+# to build the form. Bundling them into a model to satisfy the count would hide
+# the thing the linter is counting.
+"app/admin.py" = ["PLR0913", "PLR0917", "S105", "S106"]
+# The seeded client's secret is written in the open deliberately. It guards
+# nothing: this service mints tokens for people who do not exist, and the
+# registry exists so a wrong secret fails, not so a right one stays private.
+"app/seed.py" = ["S105", "S106"]
+# One router holding every JSON route. Splitting it to satisfy a statement
+# count would scatter routes that belong together.
+"app/api.py" = ["PLR0915"]
+# A token carries one argument per claim, and they are keyword-only. Bundling
+# them into a model would add a type whose only job is to be unpacked again.
+"app/oidc.py" = ["PLR0913", "PLR0917"]
+"tests/**/*.py" = [
+    "S101",
+    "S105",
+    "S106",
+    "D100",
+    "D101",
+    "D102",
+    "D103",
+    "D104",
+    "D401",
+    "PLR0913",
+    "PLR0917",
+    "PLR2004",
+    "ARG001",
+    "ARG002",
+]
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Path", "fastapi.Form", "fastapi.Body"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "tests"]
+section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+docstring-code-format = true
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_calls = true
+disallow_untyped_decorators = false
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+follow_imports = "normal"
+strict_optional = true
+exclude = "venv/"
+
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disallow_untyped_defs = false
+disallow_untyped_calls = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+addopts = ["--strict-markers", "--tb=short"]
+asyncio_mode = "auto"
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "mypy>=1.18.2",
+    "pytest>=9.0.0",
+    "pytest-asyncio>=1.3.0",
+    "ruff>=0.14.4",
+]

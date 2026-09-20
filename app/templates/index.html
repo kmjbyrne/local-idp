@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% import "_fields.html" as fields %}
+{% block content %}
+<h1>Mock identity provider</h1>
+<p class="lede">Editable users and clients for local development.</p>
+<div class="warn">
+  This service signs tokens for anybody listed below, with whatever roles they
+  are given. It is a test fixture. Do not run it anywhere that matters.
+</div>
+
+<h2>Users</h2>
+<div class="scroll"><table>
+  <thead>
+    <tr><th>Key</th><th>Name and subject</th><th>Roles</th>
+        <th>Permissions</th><th>Purpose</th><th></th></tr>
+  </thead>
+  <tbody>
+  {% for user in users %}
+  <tr>
+    <td><code>{{ user.key }}</code></td>
+    <td>{{ user.name }}<code class="subject">{{ user.subject }}</code></td>
+    <td>{{ user.roles | join(", ") or "—" }}</td>
+    <td>{{ user.permissions | join(", ") or "—" }}</td>
+    <td>{{ user.purpose }}</td>
+    <td class="actions">
+      <a class="btn" href="/users/{{ user.key }}">Edit</a>
+      <form method="post" action="/users/{{ user.key }}/delete">
+        <button class="btn danger">Delete</button>
+      </form>
+    </td>
+  </tr>
+  {% else %}
+  <tr><td colspan="6" class="empty">No users yet.</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+
+<fieldset><legend>Add a user</legend>
+<form method="post" action="/users">
+  <div class="grid">
+    {{ fields.text("Key", "key", placeholder="short-handle") }}
+    {{ fields.text("Subject", "subject", placeholder="the sub claim, e.g. a uuid") }}
+    {{ fields.text("Name", "name") }}
+    {{ fields.text("Email", "email") }}
+  </div>
+  {{ fields.area("Roles", "roles", placeholder="comma or newline separated") }}
+  {{ fields.area("Permissions", "permissions", placeholder="comma or newline separated") }}
+  {{ fields.text("Purpose", "purpose", placeholder="what this user is for") }}
+  <button type="submit">Add user</button>
+</form>
+</fieldset>
+
+<h2>Clients</h2>
+<div class="scroll"><table>
+  <thead>
+    <tr><th>Client id</th><th>Name</th><th>Secret</th>
+        <th>Secret check</th><th>Redirect URIs</th><th></th></tr>
+  </thead>
+  <tbody>
+  {% for client in clients %}
+  <tr>
+    <td><code>{{ client.client_id }}</code></td>
+    <td>{{ client.name }}</td>
+    <td><code>{{ client.client_secret or "—" }}</code></td>
+    <td>{% if client.enforce_secret %}<span class="tag on">Enforced</span>{% else %}<span class="tag off">Not checked</span>{% endif %}</td>
+    <td>{{ client.redirect_uris | join(", ") or "any" }}</td>
+    <td class="actions">
+      <form method="post" action="/clients/{{ client.client_id }}/delete">
+        <button class="btn danger">Delete</button>
+      </form>
+    </td>
+  </tr>
+  {% else %}
+  <tr><td colspan="6" class="empty">
+    No clients registered. Any credentials are accepted.
+  </td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+
+<fieldset><legend>Register a client</legend>
+<form method="post" action="/clients">
+  <div class="grid">
+    {{ fields.text("Client id", "client_id") }}
+    {{ fields.text("Client secret", "client_secret") }}
+    {{ fields.text("Name", "name") }}
+    {{ fields.text("Redirect URIs", "redirect_uris", placeholder="blank means any") }}
+  </div>
+  <label>
+    <input type="checkbox" name="enforce_secret" value="true" checked>
+    Reject a wrong secret
+  </label>
+  <button type="submit">Register client</button>
+</form>
+</fieldset>
+{% endblock %}

@@ -1,0 +1,12 @@
+{# Form field macros, so the add and edit forms cannot drift apart. #}
+{% macro text(label, name, value="", placeholder="") %}
+<label><span>{{ label }}</span>
+  <input type="text" name="{{ name }}" value="{{ value }}" placeholder="{{ placeholder }}">
+</label>
+{% endmacro %}
+
+{% macro area(label, name, value="", placeholder="") %}
+<label><span>{{ label }}</span>
+  <textarea name="{{ name }}" placeholder="{{ placeholder }}">{{ value }}</textarea>
+</label>
+{% endmacro %}
