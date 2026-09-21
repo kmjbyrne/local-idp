@@ -11,25 +11,82 @@ given, which the library's provider does not do at all. And tokens are signed
 from a keyring on disk, so a restart does not invalidate every token and several
 keys can be published at once.
 
-The code exchange and the discovery document are still ``oidcutils.dev``.
-Signing is not: ``mint_token`` writes a fixed ``kid`` and ``public_jwks``
-publishes one key, and neither can express a rotation. See ``app.keys``.
+Authorization codes are managed here rather than in ``oidcutils.dev``, because
+the library's ``issue_code``/``redeem_code`` do not carry ``scope`` or
+``nonce``, both of which OIDC requires for the ``id_token``.
+
+See ``app.keys`` for signing.
 """
 
 import base64
+import hashlib
 import secrets
+import time
 from typing import Any
 from urllib.parse import parse_qs, urlencode
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
-from oidcutils.dev import discovery_document, issue_code, redeem_code
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from joserfc import jwt
+from joserfc.jwk import KeySet
 
 from app.clients import ClientStore
 from app.config import Settings
 from app.keys import Keyring
 from app.store import User, UserStore
 from app.templating import templates
+
+CODE_LIFETIME = 300
+_codes: dict[str, dict[str, Any]] = {}
+
+
+def _issue_code(
+    user: User,
+    redirect_uri: str,
+    *,
+    scope: str = "",
+    nonce: str = "",
+) -> str:
+    """Issue an authorization code carrying the user's claims and OIDC params."""
+    code = secrets.token_urlsafe(24)
+    _codes[code] = {
+        "subject": user.subject,
+        "name": user.name,
+        "email": user.email,
+        "roles": list(user.roles),
+        "permissions": list(user.permissions),
+        "redirect_uri": redirect_uri,
+        "scope": scope,
+        "nonce": nonce,
+        "expires_at": time.time() + CODE_LIFETIME,
+    }
+    return code
+
+
+def _redeem_code(code: str) -> dict[str, Any] | None:
+    """Return the claims a code stands for, or None. Single use."""
+    claims = _codes.pop(code, None)
+    if claims is None:
+        return None
+    if claims["expires_at"] < time.time():
+        return None
+    return claims
+
+
+def _at_hash(access_token: str, alg: str) -> str:
+    """Compute the at_hash claim per OIDC Core 3.1.3.6."""
+    if alg.endswith("384"):
+        digest = hashlib.sha384(access_token.encode()).digest()
+    elif alg.endswith("512"):
+        digest = hashlib.sha512(access_token.encode()).digest()
+    else:
+        digest = hashlib.sha256(access_token.encode()).digest()
+    half = digest[: len(digest) // 2]
+    return base64.urlsafe_b64encode(half).rstrip(b"=").decode()
+
+
+def _parse_scopes(scope: str) -> set[str]:
+    return set(scope.split()) if scope else set()
 
 
 def create_oidc_router(
@@ -40,8 +97,24 @@ def create_oidc_router(
 
     @router.get("/.well-known/openid-configuration")
     async def discovery() -> dict[str, Any]:
-        """Return the discovery document clients read to find the endpoints."""
-        return discovery_document(settings.ISSUER)
+        """Return the OIDC discovery document."""
+        issuer = settings.ISSUER
+        return {
+            "issuer": issuer,
+            "authorization_endpoint": f"{issuer}/dev/authorize",
+            "token_endpoint": f"{issuer}/dev/token",
+            "userinfo_endpoint": f"{issuer}/dev/userinfo",
+            "jwks_uri": f"{issuer}/.well-known/jwks.json",
+            "scopes_supported": ["openid", "profile", "email"],
+            "response_types_supported": ["code"],
+            "grant_types_supported": ["authorization_code"],
+            "subject_types_supported": ["public"],
+            "id_token_signing_alg_values_supported": ["ES256", "ES384", "RS256"],
+            "claims_supported": [
+                "sub", "iss", "aud", "exp", "iat", "name", "email",
+                "nonce", "at_hash", "auth_time",
+            ],
+        }
 
     @router.get("/.well-known/jwks.json")
     async def jwks() -> dict[str, Any]:
@@ -55,6 +128,8 @@ def create_oidc_router(
         state: str = "",
         persona: str = "",
         client_id: str = "",
+        scope: str = "",
+        nonce: str = "",
     ) -> Any:
         """Offer the stored users, or redirect back with a code for the one picked.
 
@@ -81,7 +156,7 @@ def create_oidc_router(
             chosen = users.get(persona)
             if chosen is None:
                 raise HTTPException(400, f"Unknown persona: {persona}")
-            code = issue_code(chosen.as_persona(), redirect_uri)
+            code = _issue_code(chosen, redirect_uri, scope=scope, nonce=nonce)
             separator = "&" if "?" in redirect_uri else "?"
             location = f"{redirect_uri}{separator}code={code}"
             if state:
@@ -92,7 +167,7 @@ def create_oidc_router(
             request,
             "signin.html",
             {
-                "users": [_offer(u, redirect_uri, state, client_id) for u in offered],
+                "users": [_offer(u, redirect_uri, state, client_id, scope, nonce) for u in offered],
                 "stylesheet": "/static/signin.css",
             },
         )
@@ -108,9 +183,6 @@ def create_oidc_router(
         content_type = request.headers.get("content-type", "")
 
         if "application/x-www-form-urlencoded" in content_type:
-            # Parsed by hand rather than with request.form(), which needs
-            # python-multipart. That dependency exists for file uploads, and
-            # pulling it in to read five fields is not worth it.
             body = (await request.body()).decode()
             form = {key: value[0] for key, value in parse_qs(body).items()}
             grant = form.get("grant_type", "")
@@ -120,7 +192,7 @@ def create_oidc_router(
 
             _check_credentials(clients, form, request)
 
-            claims = redeem_code(form.get("code", ""))
+            claims = _redeem_code(form.get("code", ""))
             if claims is None:
                 raise HTTPException(400, "Invalid or expired authorization code")
 
@@ -132,14 +204,12 @@ def create_oidc_router(
                 email=claims["email"],
                 roles=claims["roles"],
                 permissions=claims["permissions"],
+                scope=claims.get("scope", ""),
+                nonce=claims.get("nonce", ""),
             )
 
         payload = await request.json() if await request.body() else {}
 
-        # A subject names a stored user, so a test gets that user's roles
-        # without repeating them. Anything else is passed through as the
-        # library's provider does, which is what a test wanting a claim nobody
-        # is stored with relies on.
         subject = payload.get("subject")
         if subject and not payload.get("roles") and not payload.get("permissions"):
             stored = next((u for u in users.load() if u.subject == subject), None)
@@ -154,6 +224,34 @@ def create_oidc_router(
                 }
 
         return _token_response(keyring, settings, **payload)
+
+    @router.get("/dev/userinfo")
+    async def userinfo(request: Request) -> JSONResponse:
+        """Return claims for the bearer token.
+
+        OIDC Core 5.3. The access token arrives as a Bearer header. Claims are
+        read from the token itself, since this provider mints self-contained
+        JWTs.
+        """
+        auth = request.headers.get("authorization", "")
+        if not auth.lower().startswith("bearer "):
+            raise HTTPException(401, "Bearer token required")
+
+        token_str = auth[7:]
+        try:
+            key_set = KeySet.import_key_set(keyring.public_jwks())
+            decoded = jwt.decode(token_str, key_set)
+            claims = decoded.claims
+        except Exception:
+            raise HTTPException(401, "Invalid or expired token")
+
+        return JSONResponse({
+            "sub": claims.get("sub"),
+            "name": claims.get("name"),
+            "email": claims.get("email"),
+            "roles": claims.get("roles", []),
+            "permissions": claims.get("permissions", []),
+        })
 
     return router
 
@@ -208,15 +306,17 @@ def _token_response(
     permissions: list[str] | None = None,
     lifetime: int | None = None,
     extra_claims: dict[str, Any] | None = None,
+    scope: str = "",
+    nonce: str = "",
 ) -> dict[str, Any]:
-    """Return the token response an OAuth2 client expects.
+    """Return the token response.
 
-    The same shape ``oidcutils.dev.mint_token`` returns, so a client cannot tell
-    the two apart. It is built here rather than called there because that
-    function writes a constant ``kid`` into the header, and a provider holding
-    several keys has to say which one signed.
+    When scope includes ``openid``, an ``id_token`` is included per OIDC Core
+    3.1.3.3. The access token is always a signed JWT with the same claims,
+    which is what most real providers do and what lets ``/dev/userinfo`` work
+    without a database lookup.
     """
-    claims: dict[str, Any] = {
+    access_claims: dict[str, Any] = {
         "iss": settings.ISSUER,
         "aud": settings.AUDIENCE,
         "sub": subject,
@@ -226,29 +326,52 @@ def _token_response(
         "permissions": permissions or [],
     }
     if extra_claims:
-        claims.update(extra_claims)
+        access_claims.update(extra_claims)
 
     seconds = lifetime if lifetime is not None else settings.TOKEN_LIFETIME
-    return {
-        "access_token": keyring.mint(claims, lifetime=seconds),
+    access_token = keyring.mint(access_claims, lifetime=seconds)
+
+    response: dict[str, Any] = {
+        "access_token": access_token,
         "token_type": "Bearer",
         "expires_in": seconds,
         "refresh_token": secrets.token_urlsafe(32),
     }
 
+    scopes = _parse_scopes(scope)
+    if "openid" in scopes:
+        id_claims: dict[str, Any] = {
+            "iss": settings.ISSUER,
+            "aud": settings.AUDIENCE,
+            "sub": subject,
+            "auth_time": int(time.time()),
+            "at_hash": _at_hash(access_token, "ES256"),
+        }
+        if nonce:
+            id_claims["nonce"] = nonce
+        if "profile" in scopes:
+            id_claims["name"] = name
+        if "email" in scopes:
+            id_claims["email"] = email
+        response["id_token"] = keyring.mint(id_claims, lifetime=seconds)
 
-def _offer(user: User, redirect_uri: str, state: str, client_id: str) -> dict[str, Any]:
-    """Return what the sign-in template needs to render one choice.
+    return response
 
-    The query string is built here rather than in the template, because getting
-    the encoding wrong is how a redirect_uri holding its own query ends up
-    truncated, and urlencode is not something Jinja should be asked to do.
-    """
-    params = {"redirect_uri": redirect_uri, "persona": user.key}
+
+def _offer(
+    user: User, redirect_uri: str, state: str, client_id: str,
+    scope: str, nonce: str,
+) -> dict[str, Any]:
+    """Return what the sign-in template needs to render one choice."""
+    params: dict[str, str] = {"redirect_uri": redirect_uri, "persona": user.key}
     if state:
         params["state"] = state
     if client_id:
         params["client_id"] = client_id
+    if scope:
+        params["scope"] = scope
+    if nonce:
+        params["nonce"] = nonce
     return {
         "key": user.key,
         "name": user.name,

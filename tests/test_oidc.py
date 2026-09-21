@@ -41,6 +41,8 @@ def test_discovery_points_at_this_provider(client: TestClient):
     assert document["issuer"] == "http://testserver"
     assert document["authorization_endpoint"] == "http://testserver/dev/authorize"
     assert document["token_endpoint"] == "http://testserver/dev/token"
+    assert document["userinfo_endpoint"] == "http://testserver/dev/userinfo"
+    assert "openid" in document["scopes_supported"]
 
 
 def test_the_public_key_is_published(client: TestClient):
@@ -296,3 +298,108 @@ class TestClientCredentials:
         )
 
         assert response.status_code == 400
+
+
+class TestOidcIdToken:
+    """Tests for OIDC id_token behavior."""
+
+    def test_openid_scope_returns_id_token(self, client: TestClient, users: UserStore):
+        users.add(User(key="ada", subject="s-ada", name="Ada Lovelace", email="ada@example.test"))
+        _publish_keys(client)
+        code = _authorize(client, "ada", scope="openid profile email")
+
+        response = client.post(
+            "/dev/token",
+            data={"grant_type": "authorization_code", "code": code},
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert "id_token" in body
+        assert "access_token" in body
+        id_claims = _claims(body["id_token"])
+        assert id_claims["sub"] == "s-ada"
+        assert id_claims["name"] == "Ada Lovelace"
+        assert id_claims["email"] == "ada@example.test"
+        assert "at_hash" in id_claims
+        assert "auth_time" in id_claims
+
+    def test_no_openid_scope_omits_id_token(self, client: TestClient, users: UserStore):
+        users.add(User(key="ada", subject="s-ada"))
+        code = _authorize(client, "ada")
+
+        response = client.post(
+            "/dev/token",
+            data={"grant_type": "authorization_code", "code": code},
+        )
+
+        assert response.status_code == 200
+        assert "id_token" not in response.json()
+
+    def test_nonce_is_echoed_in_id_token(self, client: TestClient, users: UserStore):
+        users.add(User(key="ada", subject="s-ada"))
+        _publish_keys(client)
+        code = _authorize(client, "ada", scope="openid", nonce="test-nonce-123")
+
+        response = client.post(
+            "/dev/token",
+            data={"grant_type": "authorization_code", "code": code},
+        )
+
+        id_claims = _claims(response.json()["id_token"])
+        assert id_claims["nonce"] == "test-nonce-123"
+
+    def test_profile_scope_includes_name(self, client: TestClient, users: UserStore):
+        users.add(User(key="ada", subject="s-ada", name="Ada Lovelace"))
+        _publish_keys(client)
+        code = _authorize(client, "ada", scope="openid profile")
+
+        id_claims = _claims(
+            client.post("/dev/token", data={"grant_type": "authorization_code", "code": code})
+            .json()["id_token"]
+        )
+        assert id_claims["name"] == "Ada Lovelace"
+
+    def test_openid_only_omits_profile_and_email(self, client: TestClient, users: UserStore):
+        users.add(User(key="ada", subject="s-ada", name="Ada Lovelace", email="ada@example.test"))
+        _publish_keys(client)
+        code = _authorize(client, "ada", scope="openid")
+
+        id_claims = _claims(
+            client.post("/dev/token", data={"grant_type": "authorization_code", "code": code})
+            .json()["id_token"]
+        )
+        assert id_claims["sub"] == "s-ada"
+        assert "name" not in id_claims
+        assert "email" not in id_claims
+
+
+class TestUserinfo:
+    """Tests for the /dev/userinfo endpoint."""
+
+    def test_userinfo_returns_claims(self, client: TestClient, users: UserStore):
+        users.add(User(key="ada", subject="s-ada", name="Ada Lovelace", email="ada@example.test"))
+        _publish_keys(client)
+        code = _authorize(client, "ada")
+        token = client.post(
+            "/dev/token",
+            data={"grant_type": "authorization_code", "code": code},
+        ).json()["access_token"]
+
+        response = client.get("/dev/userinfo", headers={"Authorization": f"Bearer {token}"})
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["sub"] == "s-ada"
+        assert body["name"] == "Ada Lovelace"
+        assert body["email"] == "ada@example.test"
+
+    def test_userinfo_rejects_missing_token(self, client: TestClient):
+        response = client.get("/dev/userinfo")
+
+        assert response.status_code == 401
+
+    def test_userinfo_rejects_invalid_token(self, client: TestClient):
+        response = client.get("/dev/userinfo", headers={"Authorization": "Bearer garbage"})
+
+        assert response.status_code == 401
