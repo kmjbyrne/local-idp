@@ -35,6 +35,6 @@ RUN uv sync --frozen --no-dev && \
 
 USER app
 
-EXPOSE 9000
+EXPOSE 9001
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "9000"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "9001"]
