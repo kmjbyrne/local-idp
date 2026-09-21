@@ -58,6 +58,10 @@ markdown_extensions:
 
 nav:
   - Home: index.md
+  - Getting Started: getting-started.md
+  - Configuration: configuration.md
+  - Docker: docker.md
+  - Users & Clients: users-and-clients.md
   - Flows:
       - OAuth2 Authorization Code: oauth2.md
       - OpenID Connect: openid-connect.md
