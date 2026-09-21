@@ -144,3 +144,6 @@ dev = [
     "pytest-asyncio>=1.3.0",
     "ruff>=0.14.4",
 ]
+docs = [
+    "mkdocs-material>=9.6.0",
+]
